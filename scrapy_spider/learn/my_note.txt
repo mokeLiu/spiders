@@ -1,0 +1,78 @@
+# Scrapy 笔记：
+
+## 安装 Scrapy 框架
+1. 安装 'scrapy'：通过 "pip install scrapy" 进行安装
+   pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+  （可以提前更换安装源，提高安装速度："pip config set global.index-url http://mirrors.aliyun.com/pypi/simple"）
+2. 如果在 Windows 下，还需要安装 "pypiwin32"，如果不安装，则以后运行 scrapy 项目时会报错，安装方法："pip install pypiwin32"
+3. 如果是在 Ubuntu 下，还需要安装一些第三方库："sudo apt-get install python-dev python-pip libxml2-dev libxslt1-dev zlibig-dev libffi-dev libssl-dev"
+
+## 创建项目和爬虫
+1. 创建项目："scrapy startproject [项目名称]"
+2. 创建爬虫：进入到项目所在路径，执行："scrapy genspider [爬虫名称] [爬虫域名]" 注意：爬虫名称不能与项目名称相同
+
+## 项目目录结构
+1. items.py：用于存放爬虫爬取下来的数据的模型 -> [item piplines]
+2. pipelines.py：用来将items的模型存储到本地磁盘中
+3. middlewares.py：用于存放各种中间件的文件 -> [middleware]
+4. settings.py：本爬虫的一些配置信息（如请求头、请求间隔、ip代理池等）
+5. scrapy.cfg：项目的配置文件
+6. spiders包：以后所有的爬虫，都是存放到里面
+
+## 初级爬虫笔记
+1. spider 的返回结果 response 是一个 "scrapy.http.response.html.HtmlResponse" 对象，可以执行 "xpath" 和 "css" 语法提取数据
+2. 提取出来的数据是一个 "Selector" 或者一个 "SelectorList" 对象，如要取出其中的内容要使用 "get()" 或 "getall()" 方法
+   例如：book_type = tr.xpath('./td[1]/text()').get() -> 获取第一个文本，返回值是字符串
+        book_content = tr.xpath('./td[2]/text()').getall() -> 获取所有文本，返回值是一个列表
+3. 如果数据解析回来，要传给 pipelines 处理，那么可以使用 "yield" 来返回，或者是将所有 item 装入列表，统一用 return 返回
+   例如：(1) for ...:                      (2) items = list()
+                item = ...                    for ...:
+                yield item                        item = ...
+                                                  items.append(item)
+                                                  return items
+4. items：建议在 "items.py" 中定义好模型，以后就不用使用字典
+   例如：class [模型名]():
+            [模型变量名] = scrapy.Field()
+   使用：from [项目包].items import [模型名]
+            [模型名]([模型变量名]=[数据], ...)
+5. pipelines：专门用来保存数据，其中有三个方法会经常使用：
+   · 'open_spider(self, spider)' -> 当爬虫被打开时会被调用
+   · 'process_item(self, item, spider)' -> 当爬虫有 item 传递过来时会被调用
+   · 'close_spider(self, spider)' -> 当爬虫关闭时会被调用
+   要激活 pipelines，应该在 "settings.py" 中，设置 "ITEM_PIPELINES"
+   ITEM_PIPELINES = {
+       '[项目名].pipelines.[项目名]Pipeline': 300,
+   }
+6. json 和 JsonItemExporter 和 JsonLinesItemExporter
+   保存 json 数据的时候，可以使用这三种方法，后两个类可以使操作更简单
+   ① JsonItemExporter 此方法每次会把数据添加到内存中，最后统一写入到指定的文件中
+      优点：存储数据是一个满足 json 规则的数据
+      缺点：如果数据量较大，比较消耗内存
+   ② JsonLinesItemExporter 在每次调用 exporter_item 时就会把当前 item 存储到硬盘中
+      优点：每次处理数据直接存储，不消耗内存，数据也较为安全
+      缺点：每个字典是一行，整个文件不是一个满足 json 格式的文件
+7. 对于多页的情况：可以在爬虫中使用 yield 关键字，返回 item 后不结束，暂停并继续执行
+   然后处理下一页的链接和请求内容，并递归当前函数（跳出条件、执行函数）
+
+## CrawlSpider
+1. 创建 CrawlSpider 爬虫：进入到项目所在路径，执行 "scrapy genspider -t crawl [爬虫名称] [爬虫域名]"
+2. class LevelSpider(CrawlSpider):
+       name = 'level'
+       allowed_domains = [爬虫域名]  # 限定爬取域名范围，防止出站
+       start_urls = [初始爬取页面]  # 应该是可以指定多个
+       rules = (
+           # 详情页：（假设）https://www.abc.net/html/1/123.html
+           # allow=[需要爬取的链接正则规则] 指定爬取链接的规则
+           # callback=[在下面定义的需要执行的回调函数] 指定在匹配页面的回调函数，有回调函数的规则要提前
+           # follow=[True or False] 指定是否在当前页面继续规则匹配
+           Rule(LinkExtractor(allow=r'.+/html/\d+/\d+\.html'), callback='parse_[自定义函数]', follow=False),
+           # 列表页：（假设）https://www.abc.com/html/1/
+           Rule(LinkExtractor(allow=r'.+/html/\d+/'), follow=True),
+       )
+       # 定义在指定页面的处理方式
+       def parse_[自定义函数](self, response):
+           pass
+## scrapy shell
+1. 可以方便我们做一些数据提取的测试代码
+2. 如果想要执行 scrapy 命令，首先要进入 scrapy 所在的环境中
+3. 如果想要读取某个项目的配置信息，则应先进入这个项目中，再执行 scrapy shell 命令
